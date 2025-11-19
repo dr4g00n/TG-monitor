@@ -1,0 +1,148 @@
+# Telegram Meme Token Monitor 配置文件示例
+#
+# 使用说明：
+# 1. 复制此文件为 config.toml
+# 2. 根据注释填写配置信息
+# 3. 如需更换 AI 服务，修改 ai.provider 和相关配置部分
+#
+# 配置完成后运行: cargo run
+
+[telegram]
+# Telegram API 配置（必须）
+# 获取方式：访问 https://my.telegram.org/auth，创建应用
+api_id = 123456
+api_hash = "your_api_hash_here"
+
+# 会话文件路径（可选，会自动保存登录状态）
+session_file = "session.session"
+
+# 要监控的频道 ID 列表（必须）
+# 获取方式：向 @userinfobot 发送消息
+source_channels = [
+    -1001234567890,  # 示例频道1
+    -1009876543210   # 示例频道2
+]
+
+# 目标用户 ID（必须）
+# 获取方式：向 @userinfobot 发送消息
+target_user = 123456789
+
+
+[processing]
+# 批处理配置（推荐值）
+batch_size = 10              # 每批处理的消息数量
+batch_timeout_seconds = 300  # 批处理超时时间（5分钟）
+
+# 过滤配置
+min_confidence = 0.7         # 最小置信度（0.0-1.0）
+keywords = [                 # 关键词过滤（可选）
+    "token",
+    "合约地址",
+    "买入",
+    "卖出",
+    "发射",
+    "launch",
+    "pool",
+    "流动性"
+]
+
+
+[ai]
+# AI 服务提供商选择（必填）
+# 支持的值: "ollama" | "kimi" | "openai"
+# 注意：切换提供商后，需要配置对应的 [ai.xxx] 部分
+provider = "kimi"
+
+# 通用配置
+timeout_seconds = 60         # API 超时时间（秒）
+max_retries = 3              # 最大重试次数
+
+# Prompt 模板（可选，建议保留默认）
+# 支持 {} 占位符，会被替换为实际消息内容
+prompt_template = '''
+你是一名专业的加密货币交易信息分析师。
+
+你的任务是分析 Telegram 消息，判断是否在讨论 meme token 交易信息。
+
+如果是相关消息，请提取以下信息并以 JSON 格式返回：
+{
+  "is_relevant": true,
+  "token_name": "Token名称（如果有）",
+  "contract_address": "合约地址（ETH/BSC格式：0x...）",
+  "recommendation": "买入/卖出/持有",
+  "reason": "详细的推荐理由",
+  "confidence": 0.85,
+  "urgency": 7
+}
+
+如果不是相关消息，返回：
+{"is_relevant": false}
+
+注意：
+- confidence 是 0.0 到 1.0 之间的浮点数
+- urgency 是 1 到 10 之间的整数（1=不紧急，10=非常紧急）
+- 只返回 JSON，不要包含其他文本
+
+消息内容: {}
+'''
+
+
+# ======================
+# 模式 1: 使用 Kimi API
+# ======================
+# 推荐：快速开始，无需本地硬件
+# 费用：按 token 计费（约 ¥0.01/次分析）
+# 获取 API Key: https://platform.moonshot.cn/
+[ai.kimi]
+api_key = "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"  # 必填
+model = "moonshot-v1-8k"  # 可选: moonshot-v1-8k, moonshot-v1-32k, moonshot-v1-128k
+base_url = "https://api.moonshot.cn/v1"  # 默认地址
+
+
+# ======================
+# 模式 2: 使用 Ollama 本地模型
+# ======================
+# 推荐：注重隐私、长期使用，需要 8GB+ RAM
+# 费用：免费（一次性下载模型）
+# 步骤：
+#   1. 安装 Ollama: curl -fsSL https://ollama.ai/install.sh | sh
+#   2. 下载模型: ollama pull llama3:8b
+#   3. 确认服务运行: ollama serve
+#   4. 修改 provider = "ollama" 并取消下面注释
+#[ai.ollama]
+#api_endpoint = "http://localhost:11434"  # Ollama 服务地址
+#model = "llama3:8b"  # 可选: llama3:8b, mistral:7b, qwen:7b
+
+
+# ======================
+# 模式 3: 使用 OpenAI API
+# ======================
+# 推荐：使用 OpenAI 或其他兼容 API（如 DeepSeek）
+# 费用：按 token 计费
+# 注意：base_url 可用于其他兼容 API
+#[ai.openai]
+#api_key = "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+#model = "gpt-3.5-turbo"  # 可选: gpt-3.5-turbo, gpt-4, gpt-4-turbo
+#base_url = "https://api.openai.com/v1"  # 默认地址
+# 如果要使用 DeepSeek，修改：
+# base_url = "https://api.deepseek.com/v1"
+# model = "deepseek-chat"
+
+
+# ======================
+# 配置建议
+# ======================
+#
+# 新手/快速验证：
+#   - 使用 ai.provider = "kimi"
+#   - 申请 Kimi API Key
+#   - 无需额外配置
+#
+# 隐私/长期使用：
+#   - 使用 ai.provider = "ollama"
+#   - 安装 Ollama 和模型
+#   - 数据完全本地处理
+#
+# 平衡方案：
+#   - 创建两个配置文件：config.kimi.toml 和 config.ollama.toml
+#   - 根据场景切换: cargo run -- config.kimi.toml

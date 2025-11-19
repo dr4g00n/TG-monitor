@@ -1,0 +1,36 @@
+# Rust
+target/
+Cargo.lock
+**/*.rs.bk
+*.pdb
+.deps/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Configuration
+config.toml
+!config.example.toml
+
+# Session files
+*.session
+*.session-journal
+
+# Logs
+*.log
+logs/
+
+# Environment variables
+.env
+.env.local
+
+# AI models (large files)
+*.gguf
+*.bin
+models/
