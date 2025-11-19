@@ -9,6 +9,7 @@ pub struct Config {
     pub telegram: TelegramConfig,
     pub ai: AIConfig,
     pub processing: ProcessingConfig,
+    pub http: HttpConfig,
 }
 
 impl Config {
@@ -34,19 +35,7 @@ impl Config {
 
     /// 验证配置的有效性
     fn validate(&self) -> Result<()> {
-        // 验证 Telegram 配置
-        if self.telegram.api_id == 0 {
-            anyhow::bail!("telegram.api_id 不能为空或 0");
-        }
-
-        if self.telegram.api_hash.is_empty() {
-            anyhow::bail!("telegram.api_hash 不能为空");
-        }
-
-        if self.telegram.source_channels.is_empty() {
-            anyhow::bail!("至少需要配置一个 source_channel");
-        }
-
+        // 验证 Telegram 配置（只需要 target_user 用于转发）
         if self.telegram.target_user == 0 {
             anyhow::bail!("telegram.target_user 不能为空或 0");
         }
@@ -104,11 +93,10 @@ impl Config {
 /// Telegram 配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TelegramConfig {
-    pub api_id: i32,
-    pub api_hash: String,
-    pub session_file: String,
-    pub source_channels: Vec<i64>,
+    /// 目标用户 ID（用于转发分析结果）
     pub target_user: i64,
+    /// Telegram Bot Token（用于发送转发消息）
+    pub bot_token: String,
 }
 
 /// AI 服务配置
@@ -199,4 +187,17 @@ pub struct ProcessingConfig {
 
     /// 关键词过滤（可选），包含这些词的消息优先处理
     pub keywords: Vec<String>,
+}
+
+/// HTTP 服务器配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HttpConfig {
+    /// 监听端口
+    pub port: u16,
+}
+
+impl Default for HttpConfig {
+    fn default() -> Self {
+        Self { port: 8080 }
+    }
 }

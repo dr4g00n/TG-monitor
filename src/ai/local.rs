@@ -155,8 +155,8 @@ impl AIService for OllamaService {
         }
     }
 
-    fn name(&self) -> &str {
-        &format!("Ollama Local Service ({})", self.config.model)
+    fn name(&self) -> String {
+        format!("Ollama Local Service ({})", self.config.model)
     }
 
     fn provider(&self) -> AIProvider {

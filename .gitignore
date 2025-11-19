@@ -16,6 +16,7 @@ build/
 
 # Configuration
 config.toml
+python_monitor/config.ini
 !config.example.toml
 
 # Session files

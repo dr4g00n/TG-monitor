@@ -1,7 +1,7 @@
 mod ai;
 mod config;
+mod http;
 mod processor;
-mod telegram;
 
 use ai::AIServiceFactory;
 use anyhow::Result;
@@ -16,7 +16,7 @@ async fn main() -> Result<()> {
     init_logging();
 
     info!("========================================");
-    info!("Telegram Meme Token Monitor 启动中...");
+    info!("Telegram Meme Token 处理服务启动中...");
     info!("========================================");
 
     // 加载配置
@@ -29,11 +29,11 @@ async fn main() -> Result<()> {
 
     info!("配置加载成功");
     info!("  AI 服务: {}", config.ai.provider);
-    info!("  监控频道数量: {}", config.telegram.source_channels.len());
+    info!("  HTTP 端口: {}", config.http.port);
     info!("  目标用户: {}", config.telegram.target_user);
-    info!("  批量处理: {} 条/{} 秒",
-        config.processing.batch_size,
-        config.processing.batch_timeout_seconds
+    info!(
+        "  批量处理: {} 条/{} 秒",
+        config.processing.batch_size, config.processing.batch_timeout_seconds
     );
 
     // 创建 AI 服务
@@ -51,27 +51,27 @@ async fn main() -> Result<()> {
         warn!("    请检查配置和网络连接");
     }
 
-    // 创建消息处理器（转换为 Arc）
-    let message_processor = processor::MessageProcessor::new(config.clone(), ai_service.into());
+    // 创建消息处理器
+    let message_processor = Arc::new(processor::MessageProcessor::new(
+        config.clone(),
+        ai_service.into(),
+    ));
 
-    // 启动 Telegram 客户端
-    info!("启动 Telegram 客户端...");
-    let mut client = telegram::Client::new(config.telegram, message_processor);
+    // 启动消息处理器的后台任务
+    info!("启动消息处理器...");
+    message_processor.start().await?;
+    info!("✓ 消息处理器已启动");
 
-    match client.start().await {
-        Ok(_) => {
-            info!("✓ Telegram 客户端启动成功");
-            info!("  开始监控频道消息...");
-        }
-        Err(e) => {
-            error!("✗ Telegram 客户端启动失败: {}", e);
-            return Err(e);
-        }
-    }
+    // 创建并启动 HTTP 服务器
+    info!("启动 HTTP 服务器...");
+    let http_server = http::HttpServer::new(message_processor, config.http.port);
 
-    // 保持程序运行
-    tokio::signal::ctrl_c().await?;
-    info!("收到中断信号，正在关闭...");
+    info!("✓ HTTP 服务器创建成功");
+    info!("等待接收来自 Python 监控器的消息...");
+    info!("========================================\n");
+
+    // 启动 HTTP 服务器（这会阻塞直到出错或用户中断）
+    http_server.start().await?;
 
     Ok(())
 }

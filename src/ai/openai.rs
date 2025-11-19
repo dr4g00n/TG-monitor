@@ -1,7 +1,7 @@
 use super::{AIService, AIError};
-use super::models::AnalysisResult;
+use super::models::{AnalysisResult, AIProvider};
 use async_trait::async_trait;
-use config::{AIConfig, OpenAIConfig};
+use crate::config::{AIConfig, OpenAIConfig};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -192,8 +192,8 @@ impl AIService for OpenAIService {
         }
     }
 
-    fn name(&self) -> &str {
-        &format!("OpenAI Compatible Service ({})", self.config.model)
+    fn name(&self) -> String {
+        format!("OpenAI Compatible Service ({})", self.config.model)
     }
 
     fn provider(&self) -> AIProvider {

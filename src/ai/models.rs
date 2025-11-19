@@ -242,10 +242,8 @@ impl TokenInfo {
         let mut last_seen = first.timestamp;
 
         for result in results {
-            if let Some(source) = &result.source {
-                if !sources.contains(source) {
-                    sources.push(source.clone());
-                }
+            if !sources.contains(&result.source) {
+                sources.push(result.source.clone());
             }
 
             if let Some(rec) = &result.recommendation {
@@ -253,10 +251,6 @@ impl TokenInfo {
             }
 
             total_confidence += result.confidence;
-
-            // TODO: 添加时间戳字段到 AnalysisResult
-            // first_seen = first_seen.min(result.timestamp);
-            // last_seen = last_seen.max(result.timestamp);
         }
 
         let avg_confidence = if recommendations.is_empty() {

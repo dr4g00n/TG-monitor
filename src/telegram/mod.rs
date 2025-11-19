@@ -1,3 +1,3 @@
-pub mod client;
+pub mod bot;
 
-pub use client::Client;
+pub use bot::TelegramBot;

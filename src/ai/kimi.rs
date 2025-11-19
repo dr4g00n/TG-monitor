@@ -1,7 +1,7 @@
 use super::{AIService, AIError};
-use super::models::AnalysisResult;
+use super::models::{AnalysisResult, AIProvider};
 use async_trait::async_trait;
-use config::{AIConfig, KimiConfig};
+use crate::config::{AIConfig, KimiConfig};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -193,8 +193,8 @@ impl AIService for KimiService {
         }
     }
 
-    fn name(&self) -> &str {
-        &format!("Kimi API Service ({})", self.config.model)
+    fn name(&self) -> String {
+        format!("Kimi API Service ({})", self.config.model)
     }
 
     fn provider(&self) -> AIProvider {

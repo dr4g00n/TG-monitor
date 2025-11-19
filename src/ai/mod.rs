@@ -39,7 +39,7 @@ pub trait AIService: Send + Sync {
     async fn health_check(&self) -> bool;
 
     /// 获取服务名称
-    fn name(&self) -> &str;
+    fn name(&self) -> String;
 
     /// 获取提供商类型
     fn provider(&self) -> AIProvider;
@@ -97,6 +97,7 @@ pub fn parse_analysis_response(content: &str, original_message: &str, source: &s
                 confidence: json_data["confidence"].as_f64().unwrap_or(0.0) as f32,
                 urgency: json_data["urgency"].as_i64().unwrap_or(0) as i32,
                 source: source.to_string(),
+                timestamp: chrono::Utc::now().timestamp(),
                 raw_response: Some(content.to_string()),
             });
         }
@@ -114,6 +115,7 @@ pub fn parse_analysis_response(content: &str, original_message: &str, source: &s
                 confidence: 0.6,
                 urgency: 5,
                 source: source.to_string(),
+                timestamp: chrono::Utc::now().timestamp(),
                 raw_response: Some(content.to_string()),
             });
         }
@@ -133,6 +135,7 @@ pub fn parse_analysis_response(content: &str, original_message: &str, source: &s
         confidence: if is_relevant { 0.5 } else { 0.0 },
         urgency: if is_relevant { 5 } else { 0 },
         source: source.to_string(),
+        timestamp: chrono::Utc::now().timestamp(),
         raw_response: Some(content.to_string()),
     })
 }

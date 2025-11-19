@@ -1,0 +1,12 @@
+# Telegram 客户端库
+pyrogram==2.0.106
+tgcrypto==1.2.5
+
+# HTTP 客户端
+requests==2.31.0
+
+# 异步支持（如果需要）
+# asyncio
+
+# 日志
+loguru==0.7.2
