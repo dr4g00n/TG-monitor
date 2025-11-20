@@ -98,7 +98,9 @@ class TelegramMonitor:
             valid_channels = []
             invalid_channels = []
 
-            for channel_id in self.channel_ids:
+            channel_ids = self.get_channel_ids()
+
+            for channel_id in channel_ids:
                 try:
                     chat = await self.client.get_chat(channel_id)
                     valid_channels.append((channel_id, chat.title))
@@ -113,7 +115,7 @@ class TelegramMonitor:
                 logger.error("✗ 没有可用的频道，请检查配置")
                 return False
 
-            self.channel_ids = [c[0] for c in valid_channels]  # 更新为有效的频道ID
+            self.set_channel_ids([c[0] for c in valid_channels])  # 更新为有效的频道ID
 
             # 开始监听
             logger.info("步骤 4/4: 开始监听消息...")
@@ -125,8 +127,10 @@ class TelegramMonitor:
             logger.info("========================================")
             logger.info("等待新消息... 按 Ctrl+C 停止")
 
+            self._running = True
+
             # 保持运行 - 使用更简单的等待方式
-            while True:
+            while self._running:
                 await asyncio.sleep(1)
 
         except asyncio.CancelledError:
@@ -136,6 +140,8 @@ class TelegramMonitor:
             logger.error(f"启动失败: {type(e).__name__}: {e}")
             logger.exception(e)
             return False
+        finally:
+            self._running = False
 
     def start(self):
         """启动监控（入口方法）"""
@@ -152,6 +158,37 @@ class TelegramMonitor:
         """停止监控（同步方法）"""
         self.client.stop()
         logger.info("Telegram 客户端已断开连接")
+
+    def get_channel_ids(self):
+        """获取当前频道ID列表"""
+        return self.channel_ids
+
+    def set_channel_ids(self, channel_ids):
+        """设置新的频道ID列表"""
+        old_count = len(self.channel_ids)
+        self.channel_ids = channel_ids.copy()
+        new_count = len(self.channel_ids)
+        logger.info(f"频道列表已更新: {old_count} -> {new_count} 个频道")
+
+    def add_channel(self, channel_id):
+        """添加单个频道"""
+        if channel_id not in self.channel_ids:
+            self.channel_ids.append(channel_id)
+            logger.info(f"添加监控频道: {channel_id}")
+            return True
+        return False
+
+    def remove_channel(self, channel_id):
+        """删除频道"""
+        if channel_id in self.channel_ids:
+            self.channel_ids.remove(channel_id)
+            logger.info(f"删除监控频道: {channel_id}")
+            return True
+        return False
+
+    def is_channel_monitored(self, channel_id):
+        """检查频道是否在监控列表中"""
+        return channel_id in self.channel_ids
 
     async def stop_async(self):
         """异步停止监控"""

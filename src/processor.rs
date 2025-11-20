@@ -1,12 +1,13 @@
-use crate::ai::{AIService, AIError};
+use crate::ai::AIService;
 use crate::config::Config;
 use crate::ai::models::{Message, AnalysisResult, TokenInfo, SummaryReport};
-use anyhow::{Result, Context};
+use crate::http::channel_handler::ChannelInfo;
+use anyhow::Result;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tokio::time::{interval, Duration, sleep};
-use tracing::{debug, error, info, warn};
+use tokio::time::{interval, Duration};
+use tracing::{debug, error, info};
 
 /// 消息处理器
 pub struct MessageProcessor {
@@ -15,6 +16,8 @@ pub struct MessageProcessor {
     message_queue: Arc<Mutex<VecDeque<Message>>>,
     analysis_results: Arc<Mutex<Vec<AnalysisResult>>>,
     is_running: Arc<Mutex<bool>>,
+    /// 监控频道列表
+    monitored_channels: Arc<Mutex<Vec<ChannelInfo>>>,
 }
 
 impl MessageProcessor {
@@ -26,6 +29,7 @@ impl MessageProcessor {
             message_queue: Arc::new(Mutex::new(VecDeque::new())),
             analysis_results: Arc::new(Mutex::new(Vec::new())),
             is_running: Arc::new(Mutex::new(false)),
+            monitored_channels: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -278,6 +282,84 @@ impl MessageProcessor {
             lower_text.contains(&keyword.to_lowercase())
         })
     }
+
+    /// 检查消息是否来自监控的频道
+    pub async fn should_process_message(&self, channel_id: i64) -> bool {
+        let channels = self.monitored_channels.lock().await;
+        channels.iter().any(|c| c.channel_id == channel_id)
+    }
+
+    /// 获取所有监控的频道
+    pub async fn get_channels(&self) -> Result<Vec<ChannelInfo>> {
+        let channels = self.monitored_channels.lock().await;
+        Ok(channels.clone())
+    }
+
+    /// 添加频道到监控列表
+    pub async fn add_channel(&self, channel_id: i64, channel_name: Option<String>) -> Result<()> {
+        let mut channels = self.monitored_channels.lock().await;
+
+        // 检查是否已存在
+        if channels.iter().any(|c| c.channel_id == channel_id) {
+            return Ok(()); // 已存在，无需添加
+        }
+
+        let channel = ChannelInfo {
+            channel_id,
+            channel_name,
+            added_at: chrono::Utc::now().timestamp(),
+        };
+
+        channels.push(channel);
+        info!("添加监控频道: {}", channel_id);
+
+        Ok(())
+    }
+
+    /// 从监控列表中删除频道
+    pub async fn remove_channel(&self, channel_id: i64) -> Result<()> {
+        let mut channels = self.monitored_channels.lock().await;
+        let initial_len = channels.len();
+
+        channels.retain(|c| c.channel_id != channel_id);
+
+        if channels.len() < initial_len {
+            info!("删除监控频道: {}", channel_id);
+        }
+
+        Ok(())
+    }
+
+    /// 更新整个频道列表
+    pub async fn update_channels(&self, channel_ids: Vec<i64>) -> Result<()> {
+        let mut channels = self.monitored_channels.lock().await;
+
+        // 保留现有的频道名称信息
+        let existing: std::collections::HashMap<i64, Option<String>> = channels.iter()
+            .map(|c| (c.channel_id, c.channel_name.clone()))
+            .collect();
+
+        // 替换为新的频道列表
+        *channels = channel_ids.into_iter()
+            .map(|id| ChannelInfo {
+                channel_id: id,
+                channel_name: existing.get(&id).cloned().unwrap_or(None),
+                added_at: existing.get(&id).map_or(chrono::Utc::now().timestamp(), |_| {
+                    // 如果频道已存在，保留原添加时间
+                    chrono::Utc::now().timestamp()
+                }),
+            })
+            .collect();
+
+        info!("更新频道列表，共 {} 个频道", channels.len());
+        Ok(())
+    }
+
+    /// 检查频道是否在监控列表中
+    pub async fn has_channel(&self, channel_id: i64) -> Result<bool> {
+        let channels = self.monitored_channels.lock().await;
+        Ok(channels.iter().any(|c| c.channel_id == channel_id))
+    }
 }
 
 // 为 MessageProcessor 实现 Clone
@@ -289,6 +371,7 @@ impl Clone for MessageProcessor {
             message_queue: Arc::clone(&self.message_queue),
             analysis_results: Arc::clone(&self.analysis_results),
             is_running: Arc::clone(&self.is_running),
+            monitored_channels: Arc::clone(&self.monitored_channels),
         }
     }
 }

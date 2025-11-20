@@ -3,7 +3,7 @@ use super::models::{AnalysisResult, AIProvider};
 use async_trait::async_trait;
 use crate::config::{AIConfig, KimiConfig};
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 use std::time::Duration;
 use tracing::{debug, error, info};
@@ -204,24 +204,28 @@ impl AIService for KimiService {
 
 // Kimi API 响应结构
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct KimiResponse {
     choices: Vec<KimiChoice>,
     usage: Option<KimiUsage>,
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct KimiChoice {
     message: KimiMessage,
     finish_reason: String,
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct KimiMessage {
     role: String,
     content: String,
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct KimiUsage {
     prompt_tokens: u32,
     completion_tokens: u32,
@@ -230,11 +234,13 @@ struct KimiUsage {
 
 // Kimi API 错误响应
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct KimiErrorResponse {
     error: KimiErrorDetail,
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct KimiErrorDetail {
     message: String,
     code: String,

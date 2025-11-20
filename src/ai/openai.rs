@@ -3,7 +3,7 @@ use super::models::{AnalysisResult, AIProvider};
 use async_trait::async_trait;
 use crate::config::{AIConfig, OpenAIConfig};
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 use std::time::Duration;
 use tracing::{debug, error, info};
@@ -212,6 +212,7 @@ impl OpenAIService {
 
 /// OpenAI API 响应结构
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct OpenAIResponse {
     id: String,
     object: String,
@@ -221,6 +222,7 @@ struct OpenAIResponse {
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct OpenAIChoice {
     index: u32,
     message: OpenAIMessage,
@@ -228,12 +230,14 @@ struct OpenAIChoice {
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct OpenAIMessage {
     role: String,
     content: String,
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct OpenAIUsage {
     prompt_tokens: u32,
     completion_tokens: u32,

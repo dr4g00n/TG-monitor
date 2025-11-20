@@ -1,13 +1,12 @@
-mod ai;
-mod config;
-mod http;
-mod processor;
-
-use ai::AIServiceFactory;
+use tg_meme_token_monitor::{
+    ai::AIServiceFactory,
+    config::Config,
+    http::HttpServer,
+    processor::MessageProcessor,
+};
 use anyhow::Result;
-use config::Config;
 use std::sync::Arc;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
@@ -52,7 +51,7 @@ async fn main() -> Result<()> {
     }
 
     // 创建消息处理器
-    let message_processor = Arc::new(processor::MessageProcessor::new(
+    let message_processor = Arc::new(MessageProcessor::new(
         config.clone(),
         ai_service.into(),
     ));
@@ -64,7 +63,7 @@ async fn main() -> Result<()> {
 
     // 创建并启动 HTTP 服务器
     info!("启动 HTTP 服务器...");
-    let http_server = http::HttpServer::new(message_processor, config.http.port);
+    let http_server = HttpServer::new(message_processor, config.http.port);
 
     info!("✓ HTTP 服务器创建成功");
     info!("等待接收来自 Python 监控器的消息...");

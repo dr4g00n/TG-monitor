@@ -238,8 +238,8 @@ impl TokenInfo {
         let mut sources = Vec::new();
         let mut recommendations = Vec::new();
         let mut total_confidence = 0.0;
-        let mut first_seen = first.timestamp;
-        let mut last_seen = first.timestamp;
+        let first_seen = first.timestamp;
+        let last_seen = first.timestamp;
 
         for result in results {
             if !sources.contains(&result.source) {
@@ -382,4 +382,3 @@ fn format_timestamp(timestamp: i64) -> String {
     dt.format("%Y-%m-%d %H:%M:%S UTC").to_string()
 }
 
-use tracing::debug;

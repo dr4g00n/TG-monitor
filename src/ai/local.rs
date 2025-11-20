@@ -3,7 +3,7 @@ use super::models::{AnalysisResult, AIProvider};
 use async_trait::async_trait;
 use crate::config::{AIConfig, OllamaConfig};
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 use std::time::Duration;
 use tracing::{debug, error, info};
@@ -173,16 +173,18 @@ impl OllamaService {
     }
 }
 
-/// Ollama 响应结构
+/// Ollama API 响应（字段由反序列化使用）
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct OllamaResponse {
     response: String,
     done: bool,
     context: Option<Vec<u32>>,
 }
 
-/// Ollama 模型信息
+/// Ollama 模型信息（字段由反序列化使用）
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct OllamaModelInfo {
     name: String,
     model: String,

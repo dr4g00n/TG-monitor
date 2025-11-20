@@ -7,10 +7,10 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 /// 接收消息的请求体
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Serialize)]
 pub struct ReceiveMessageRequest {
     pub channel_id: i64,
     pub channel_name: String,
@@ -21,7 +21,7 @@ pub struct ReceiveMessageRequest {
 }
 
 /// 响应体
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct ApiResponse {
     pub success: bool,
     pub message: String,
@@ -68,27 +68,39 @@ pub async fn receive_message(
         request.channel_name, request.message_id
     );
 
-    // 转换为内部消息格式
-    let message = Message {
-        id: request.message_id as i64,
-        channel_id: request.channel_id,
-        channel_name: request.channel_name,
-        text: request.text,
-        timestamp: request.timestamp,
-        sender: request.sender,
-        media_type: None,
-    };
+    // 检查频道是否在监控列表中
+    if processor.should_process_message(request.channel_id).await {
+        // 转换为内部消息格式
+        let message = Message {
+            id: request.message_id as i64,
+            channel_id: request.channel_id,
+            channel_name: request.channel_name,
+            text: request.text,
+            timestamp: request.timestamp,
+            sender: request.sender,
+            media_type: None,
+        };
 
-    // 发送到消息处理器
-    match processor.process_message(message).await {
-        Ok(_) => {
-            info!("消息已加入处理队列");
-            ApiResponse::success("消息已接收并加入处理队列")
+        // 发送到消息处理器
+        match processor.process_message(message).await {
+            Ok(_) => {
+                info!("消息已加入处理队列");
+                ApiResponse::success("消息已接收并加入处理队列")
+            }
+            Err(e) => {
+                error!("处理消息失败: {}", e);
+                ApiResponse::error(format!("处理消息失败: {}", e))
+            }
         }
-        Err(e) => {
-            error!("处理消息失败: {}", e);
-            ApiResponse::error(format!("处理消息失败: {}", e))
-        }
+    } else {
+        warn!(
+            "频道 {} 不在监控列表中，消息被忽略",
+            request.channel_id
+        );
+        ApiResponse::error(format!(
+            "频道 {} 不在监控列表中",
+            request.channel_id
+        ))
     }
 }
 
