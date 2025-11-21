@@ -3,6 +3,7 @@ use tg_meme_token_monitor::{
     config::Config,
     http::HttpServer,
     processor::MessageProcessor,
+    telegram::bot::TelegramBot,
 };
 use anyhow::Result;
 use std::sync::Arc;
@@ -50,10 +51,29 @@ async fn main() -> Result<()> {
         warn!("    请检查配置和网络连接");
     }
 
+    // 创建 Telegram Bot（用于转发消息）
+    info!("初始化 Telegram Bot...");
+    let telegram_bot = Arc::new(TelegramBot::new(config.telegram.clone()));
+
+    // 验证 Telegram Bot
+    info!("进行 Telegram Bot 健康检查...");
+    match telegram_bot.health_check().await {
+        Ok(true) => info!("✓ Telegram Bot 健康检查通过"),
+        Ok(false) => {
+            warn!("⚠️  Telegram Bot 健康检查失败，请检查 bot_token");
+            warn!("    消息转发功能可能无法正常工作");
+        },
+        Err(e) => {
+            warn!("⚠️  Telegram Bot 连接失败: {}", e);
+            warn!("    消息转发功能可能无法正常工作");
+        }
+    }
+
     // 创建消息处理器
     let message_processor = Arc::new(MessageProcessor::new(
         config.clone(),
         ai_service.into(),
+        telegram_bot,
     ));
 
     // 启动消息处理器的后台任务

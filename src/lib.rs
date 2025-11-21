@@ -7,6 +7,9 @@ pub mod http;
 pub mod processor;
 pub mod telegram;
 
+// Unicode安全工具
+pub mod unicode_safe;
+
 // Re-export commonly used types for convenience
 pub use ai::{AIService, AIServiceFactory};
 pub use config::Config;

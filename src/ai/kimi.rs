@@ -2,6 +2,7 @@ use super::{AIService, AIError};
 use super::models::{AnalysisResult, AIProvider};
 use async_trait::async_trait;
 use crate::config::{AIConfig, KimiConfig};
+use crate::unicode_safe::{create_safe_summary, safe_log_message};
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::Value;
@@ -80,7 +81,9 @@ impl KimiService {
 #[async_trait]
 impl AIService for KimiService {
     async fn analyze(&self, message: &str) -> Result<AnalysisResult, AIError> {
-        debug!("使用 Kimi 分析消息: {}", message[..message.len().min(50)].to_string());
+        // 使用Unicode安全的字符截断和日志记录
+        let safe_preview = create_safe_summary(message);
+        debug!("使用 Kimi 分析消息: {}", safe_preview);
 
         // 构建请求体
         let request_body = serde_json::json!({

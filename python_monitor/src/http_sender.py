@@ -47,9 +47,19 @@ class HttpSender:
         Returns:
             bool: 是否发送成功
         """
+        # ✅ 添加详细发送日志
+        logger.info(f"📤 HTTP 发送消息:")
+        logger.info(f"  URL: {self.url}")
+        logger.info(f"  频道: {message_data.get('channel_name', 'Unknown')}")
+        logger.info(f"  消息ID: {message_data.get('message_id', 'Unknown')}")
+        logger.debug(f"  完整数据: {json.dumps(message_data, ensure_ascii=False, indent=2)}")
+
         for attempt in range(self.max_retries + 1):
             try:
-                logger.debug(f"发送消息到 Rust 服务 (尝试 {attempt + 1}/{self.max_retries + 1})")
+                if attempt > 0:
+                    logger.info(f"🔄 第 {attempt + 1}/{self.max_retries + 1} 次重试...")
+
+                logger.debug(f"发送 HTTP 请求 (尝试 {attempt + 1}/{self.max_retries + 1})")
 
                 response = self.session.post(
                     self.url,
@@ -61,6 +71,9 @@ class HttpSender:
                     }
                 )
 
+                logger.info(f"  响应状态: HTTP {response.status_code}")
+                logger.debug(f"  响应内容: {response.text[:200]}{'...' if len(response.text) > 200 else ''}")
+
                 if response.status_code == 200:
                     result = response.json()
                     if result.get('success'):
@@ -70,12 +83,12 @@ class HttpSender:
                         logger.error(f"✗ 服务返回错误: {result.get('message', '未知错误')}")
                         return False
                 else:
-                    logger.error(f"✗ HTTP 错误 {response.status_code}: {response.text}")
+                    logger.error(f"✗ HTTP 错误 {response.status_code}: {response.text[:100]}{'...' if len(response.text) > 100 else ''}")
 
                     # 如果不是最后一次尝试，等待后重试
                     if attempt < self.max_retries:
                         wait_time = 2 ** attempt  # 指数退避
-                        logger.info(f"等待 {wait_time} 秒后重试...")
+                        logger.info(f"⏱️  等待 {wait_time} 秒后重试...")
                         time.sleep(wait_time)
 
             except requests.exceptions.Timeout:

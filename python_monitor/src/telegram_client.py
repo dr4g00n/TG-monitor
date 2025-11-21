@@ -1,5 +1,5 @@
 """
-Telegram 监控模块
+Telegram 监控模块 - 使用 debug_monitor.py 验证成功的架构
 使用 Pyrogram 监控频道消息
 """
 
@@ -12,13 +12,16 @@ from src.http_sender import HttpSender
 import asyncio
 import os
 
+# 全局变量防止客户端被垃圾回收
+_global_pyrogram_client = None
+_global_http_sender = None
 
 class TelegramMonitor:
-    """Telegram 监控器"""
+    """Telegram 监控器 - 使用验证成功的架构"""
 
     def __init__(self, api_id: int, api_hash: str, session_file: str, channel_ids: List[int], http_sender: HttpSender):
         """
-        初始化
+        初始化 - 使用与 debug_monitor.py 相同的简单架构
 
         Args:
             api_id: Telegram API ID
@@ -33,103 +36,155 @@ class TelegramMonitor:
         self.channel_ids = channel_ids
         self.http_sender = http_sender
 
-        # 检查是否需要代理
-        proxy = None
-        http_proxy = os.environ.get('http_proxy') or os.environ.get('HTTP_PROXY')
+        # 保存到全局变量防止垃圾回收
+        global _global_http_sender
+        _global_http_sender = http_sender
 
-        if http_proxy:
-            logger.info(f"检测到代理设置: {http_proxy}")
-            # Pyrogram 代理格式: {"hostname": str, "port": int, "scheme": str}
-            # 从 http://127.0.0.1:7890 提取主机和端口
-            if http_proxy.startswith('http://'):
-                proxy_url = http_proxy[7:]  # 移除 http://
-                if '@' in proxy_url:  # 如果有认证
-                    auth_part, host_part = proxy_url.split('@')
-                else:
-                    host_part = proxy_url
-
-                if ':' in host_part:
-                    hostname, port = host_part.split(':')
-                    proxy = {
-                        "scheme": "http",
-                        "hostname": hostname,
-                        "port": int(port)
-                    }
-                    logger.info(f"配置 Pyrogram 代理: {proxy}")
-
-        # 创建 Pyrogram 客户端
-        self.client = Client(
-            session_file,
-            api_id=api_id,
-            api_hash=api_hash,
-            system_version="4.16.30-vxCUSTOM",
-            proxy=proxy
-        )
+        # ✅ 初始化统计（简化版）
+        self.stats = {
+            'messages_received': 0,
+            'messages_sent': 0,
+            'messages_failed': 0,
+            'last_message_time': None,
+            'channels_active': set()
+        }
 
         logger.info(f"Telegram 监控器初始化完成")
         logger.info(f"  API ID: {api_id}")
         logger.info(f"  会话文件: {session_file}")
         logger.info(f"  监控频道: {len(channel_ids)} 个")
 
-        # 注册消息处理器（使用同步方法）
-        self.client.add_handler(
-            MessageHandler(self.handle_message_sync, filters.channel & filters.incoming)
-        )
-
     async def start_async(self):
-        """异步启动监控（带详细状态反馈）"""
+        """异步启动监控 - 使用 debug_monitor.py 的成功模式"""
         logger.info("========================================")
-        logger.info("正在连接 Telegram...")
+        logger.info("Telegram 监控器启动中...")
         logger.info("========================================")
 
         try:
-            # 开始连接
-            logger.info("步骤 1/4: 初始化连接...")
-            await self.client.start()
-            logger.info("✓ 连接初始化成功")
+            # 步骤 1: 连接 Telegram（简化流程）
+            logger.info("步骤 1/3: 连接 Telegram...")
 
-            # 检查登录状态
-            logger.info("步骤 2/4: 检查登录状态...")
-            me = await self.client.get_me()
-            logger.info(f"✓ 登录成功！用户名: @{me.username or 'N/A'} (ID: {me.id})")
+            # 检查代理设置
+            proxy = None
+            http_proxy = os.environ.get('http_proxy') or os.environ.get('HTTP_PROXY')
+            if http_proxy:
+                logger.info(f"检测到代理设置: {http_proxy}")
+                if http_proxy.startswith('http://'):
+                    proxy_url = http_proxy[7:]
+                    if ':' in proxy_url:
+                        hostname, port = proxy_url.split(':')
+                        proxy = {
+                            "scheme": "http",
+                            "hostname": hostname,
+                            "port": int(port)
+                        }
+                        logger.info(f"配置代理: {proxy}")
 
-            # 验证频道访问权限
-            logger.info("步骤 3/4: 验证频道访问权限...")
-            valid_channels = []
-            invalid_channels = []
+            # 关键：使用全局变量存储客户端引用
+            global _global_pyrogram_client
 
-            channel_ids = self.get_channel_ids()
+            # 创建 Pyrogram 客户端（与 debug_monitor.py 相同的方式）
+            _global_pyrogram_client = Client(
+                self.session_file,
+                api_id=self.api_id,
+                api_hash=self.api_hash,
+                proxy=proxy
+            )
 
-            for channel_id in channel_ids:
+            # 同时保存到实例属性
+            self.client = _global_pyrogram_client
+
+            # 步骤 2: 注册消息处理器
+            logger.info("步骤 2/3: 注册消息处理器...")
+
+            @self.client.on_message()
+            async def message_handler(client, message):
+                """处理所有收到的消息 - 使用 debug_monitor.py 的成功模式"""
+                logger.info("🎯 Handler触发 - 收到消息事件！")
+                logger.info(f"  聊天ID: {message.chat.id}")
+                logger.info(f"  消息ID: {message.id}")
+                logger.info(f"  聊天类型: {message.chat.type}")
+                logger.info(f"  聊天标题: {getattr(message.chat, 'title', 'N/A')}")
+
+                # 检查频道是否在监控列表中
+                if message.chat.id not in self.channel_ids:
+                    logger.debug(f"跳过未监控的频道: {message.chat.id}")
+                    return
+
+                # ✅ 更新统计
+                self.stats['messages_received'] += 1
+                self.stats['last_message_time'] = message.date
+                self.stats['channels_active'].add(message.chat.id)
+
                 try:
-                    chat = await self.client.get_chat(channel_id)
-                    valid_channels.append((channel_id, chat.title))
-                    logger.info(f"  ✓ 频道可访问: {chat.title} ({channel_id})")
+                    # 提取消息信息
+                    channel_name = getattr(message.chat, 'title', 'Unknown')
+                    logger.info(f"📨 收到新消息:")
+                    logger.info(f"  频道: {channel_name} ({message.chat.id})")
+                    logger.info(f"  消息ID: {message.id}")
+                    logger.info(f"  时间: {message.date.strftime('%Y-%m-%d %H:%M:%S')}")
+
+                    # 显示发送者信息
+                    if message.from_user:
+                        sender = message.from_user
+                        sender_name = sender.username or sender.first_name or 'Unknown'
+                        logger.info(f"  发送者: {sender_name} ({sender.id})")
+                    elif message.sender_chat:
+                        sender_chat = message.sender_chat
+                        sender_name = getattr(sender_chat, 'title', 'Unknown')
+                        logger.info(f"  发送者: {sender_name} (频道)")
+
+                    # 显示消息内容预览
+                    if message.text:
+                        preview = message.text[:100].replace('\n', '\\n')
+                        logger.info(f"  内容: {preview}{'...' if len(message.text) > 100 else ''}")
+                    elif message.caption:
+                        preview = message.caption[:100].replace('\n', '\\n')
+                        logger.info(f"  媒体描述: {preview}{'...' if len(message.caption) > 100 else ''}")
+                    else:
+                        media_type = self.get_media_type(message)
+                        logger.info(f"  媒体类型: {media_type}")
+
+                    # 提取消息数据
+                    message_data = self.extract_message_data(message)
+
+                    # 发送到 Rust 服务
+                    logger.info(f"⬆️  转发到 Rust 服务...")
+                    success = await asyncio.to_thread(self.http_sender.send_message, message_data)
+
+                    # 更新统计
+                    if success:
+                        self.stats['messages_sent'] += 1
+                        logger.info(f"✓ 消息处理完成: {message_data['message_id']}")
+                    else:
+                        self.stats['messages_failed'] += 1
+                        logger.warning(f"⚠️  消息发送失败: {message_data['message_id']}")
+
+                    # 显示统计
+                    logger.info(f"📊 实时统计:")
+                    logger.info(f"  累计接收: {self.stats['messages_received']}")
+                    logger.info(f"  成功发送: {self.stats['messages_sent']}")
+                    logger.info(f"  发送失败: {self.stats['messages_failed']}")
+                    logger.info(f"  活跃频道: {len(self.stats['channels_active'])}")
+
                 except Exception as e:
-                    invalid_channels.append((channel_id, str(e)))
-                    logger.warning(f"  ✗ 频道无法访问: {channel_id} - {e}")
+                    self.stats['messages_failed'] += 1
+                    logger.error(f"处理消息时出错: {e}")
+                    logger.exception(e)
 
-            logger.info(f"✓ 频道验证完成: {len(valid_channels)} 个可用, {len(invalid_channels)} 个失败")
+            logger.info("✓ 消息处理器注册成功")
 
-            if not valid_channels:
-                logger.error("✗ 没有可用的频道，请检查配置")
-                return False
-
-            self.set_channel_ids([c[0] for c in valid_channels])  # 更新为有效的频道ID
-
-            # 开始监听
-            logger.info("步骤 4/4: 开始监听消息...")
+            # 步骤 3: 启动客户端并监听
+            logger.info("步骤 3/3: 启动客户端并监听消息...")
             logger.info("========================================")
+
+            await self.client.start()
             logger.info("✓ Telegram 监控器启动成功！")
-            logger.info(f"  正在监控 {len(valid_channels)} 个频道:")
-            for channel_id, title in valid_channels:
-                logger.info(f"    - {title} ({channel_id})")
-            logger.info("========================================")
             logger.info("等待新消息... 按 Ctrl+C 停止")
+            logger.info("========================================")
 
+            # 保持运行 - 使用与 debug_monitor.py 相同的简单等待方式
             self._running = True
-
-            # 保持运行 - 使用更简单的等待方式
             while self._running:
                 await asyncio.sleep(1)
 
@@ -146,7 +201,6 @@ class TelegramMonitor:
     def start(self):
         """启动监控（入口方法）"""
         try:
-            # 使用 asyncio 运行异步方法
             asyncio.run(self.start_async())
         except KeyboardInterrupt:
             logger.info("\n用户中断，程序退出")
@@ -155,9 +209,11 @@ class TelegramMonitor:
             logger.exception(e)
 
     def stop(self):
-        """停止监控（同步方法）"""
-        self.client.stop()
-        logger.info("Telegram 客户端已断开连接")
+        """停止监控"""
+        self._running = False
+        if self.client and self.client.is_connected:
+            asyncio.create_task(self.client.stop())
+            logger.info("Telegram 客户端已断开连接")
 
     def get_channel_ids(self):
         """获取当前频道ID列表"""
@@ -190,60 +246,8 @@ class TelegramMonitor:
         """检查频道是否在监控列表中"""
         return channel_id in self.channel_ids
 
-    async def stop_async(self):
-        """异步停止监控"""
-        if self.client.is_connected:
-            await self.client.stop()
-            logger.info("Telegram 客户端已断开连接")
-        else:
-            logger.info("Telegram 客户端未连接")
-
-    def handle_message_sync(self, client: Client, message: Message):
-        """
-        同步处理接收到的消息（Pyrogram 要求 Handler 是同步的）
-
-        Args:
-            client: Pyrogram 客户端
-            message: 接收到的消息
-        """
-        # 创建异步任务
-        asyncio.create_task(self.handle_message_async(client, message))
-
-    async def handle_message_async(self, client: Client, message: Message):
-        """
-        异步处理接收到的消息
-
-        Args:
-            client: Pyrogram 客户端
-            message: 接收到的消息
-        """
-        try:
-            # 只处理配置的频道
-            if message.chat.id not in self.channel_ids:
-                return
-
-            logger.info(f"收到新消息: [{getattr(message.chat, 'title', 'Unknown')}] {message.id}")
-
-            # 提取消息信息
-            message_data = self.extract_message_data(message)
-
-            # 发送到 Rust 服务（在后台线程中执行同步 HTTP 请求）
-            await asyncio.to_thread(self.http_sender.send_message, message_data)
-
-        except Exception as e:
-            logger.error(f"处理消息时出错: {e}")
-            logger.exception(e)
-
     def extract_message_data(self, message: Message) -> Dict:
-        """
-        提取消息数据
-
-        Args:
-            message: Pyrogram 消息对象
-
-        Returns:
-            dict: 提取的消息数据
-        """
+        """提取消息数据 - 保持原有功能"""
         data = {
             'channel_id': message.chat.id,
             'channel_name': message.chat.title or 'Unknown',
@@ -270,24 +274,15 @@ class TelegramMonitor:
             user_id = user.id
             data['sender'] = f"{username} ({user_id})"
 
-        # 限制文本长度（避免发送过大的消息）
+        # 限制文本长度
         if len(data['text']) > 4000:
             data['text'] = data['text'][:4000] + '... [截断]'
 
         logger.debug(f"消息数据提取完成: {data['channel_name']} - {data['message_id']}")
-
         return data
 
     def get_media_type(self, message: Message) -> str:
-        """
-        获取媒体类型
-
-        Args:
-            message: 消息对象
-
-        Returns:
-            str: 媒体类型描述
-        """
+        """获取媒体类型 - 保持原有功能"""
         if message.photo:
             return "Photo"
         elif message.video:
@@ -309,6 +304,8 @@ class TelegramMonitor:
         else:
             return "Unknown Media"
 
-
-# 兼容 Pyrogram 2.0+ 的 Handler 接口
-from pyrogram.handlers import MessageHandler
+    async def stop_async(self):
+        """异步停止监控"""
+        if self.client and self.client.is_connected:
+            await self.client.stop()
+            logger.info("Telegram 客户端已断开连接")

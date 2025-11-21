@@ -92,7 +92,14 @@ impl AnalysisResult {
         // 推荐理由（可选）
         if let Some(reason) = &self.reason {
             if !reason.is_empty() {
-                summary.push_str(&format!("> **理由**: {}\n", reason.trim()));
+                // UTF-8安全的理由截断，避免过长的文本导致日志问题
+                let safe_reason = if reason.chars().count() > 200 {
+                    let truncated: String = reason.chars().take(197).collect();
+                    format!("{}...", truncated.trim())
+                } else {
+                    reason.trim().to_string()
+                };
+                summary.push_str(&format!("> **理由**: {}\n", safe_reason));
             }
         }
 
@@ -105,7 +112,13 @@ impl AnalysisResult {
         // AI 来源
         summary.push_str(&format!("> **来源**: {}\n", self.source));
 
-        summary
+        // 最终安全检查：如果总结太长，进行字符级截断
+        if summary.chars().count() > 500 {
+            let truncated: String = summary.chars().take(497).collect();
+            format!("{}...", truncated)
+        } else {
+            summary
+        }
     }
 }
 
@@ -184,8 +197,9 @@ impl Message {
 
     /// 消息摘要（用于日志）
     pub fn summary(&self) -> String {
-        let preview = if self.text.len() > 50 {
-            format!("{}...", &self.text[..50])
+        let preview = if self.text.chars().count() > 50 {
+            let truncated: String = self.text.chars().take(50).collect();
+            format!("{}...", truncated)
         } else {
             self.text.clone()
         };

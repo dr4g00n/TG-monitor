@@ -2,6 +2,8 @@ use crate::ai::AIService;
 use crate::config::Config;
 use crate::ai::models::{Message, AnalysisResult, TokenInfo, SummaryReport};
 use crate::http::channel_handler::ChannelInfo;
+use crate::telegram::bot::TelegramBot;
+use crate::unicode_safe::{create_safe_summary, safe_log_message, normalize_for_logging};
 use anyhow::Result;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
@@ -13,6 +15,7 @@ use tracing::{debug, error, info};
 pub struct MessageProcessor {
     config: Config,
     ai_service: Arc<dyn AIService>,
+    telegram_bot: Arc<TelegramBot>,
     message_queue: Arc<Mutex<VecDeque<Message>>>,
     analysis_results: Arc<Mutex<Vec<AnalysisResult>>>,
     is_running: Arc<Mutex<bool>>,
@@ -22,10 +25,11 @@ pub struct MessageProcessor {
 
 impl MessageProcessor {
     /// 创建新的消息处理器
-    pub fn new(config: Config, ai_service: Arc<dyn AIService>) -> Self {
+    pub fn new(config: Config, ai_service: Arc<dyn AIService>, telegram_bot: Arc<TelegramBot>) -> Self {
         Self {
             config,
             ai_service,
+            telegram_bot,
             message_queue: Arc::new(Mutex::new(VecDeque::new())),
             analysis_results: Arc::new(Mutex::new(Vec::new())),
             is_running: Arc::new(Mutex::new(false)),
@@ -74,22 +78,33 @@ impl MessageProcessor {
 
     /// 处理消息（从 Telegram 接收）
     pub async fn process_message(&self, message: Message) -> Result<()> {
-        debug!("收到新消息: {}", message.summary());
+        // 使用Unicode安全的日志记录
+        let safe_summary = create_safe_summary(&message.text);
+        info!("🎯 MESSAGE PROCESSOR: process_message() 被调用！消息: [{}] {} - {}",
+            message.channel_name, message.id, safe_summary);
 
         // 预处理：检查关键词
+        info!("🔍 检查消息是否需要过滤...");
         if self.should_filter(&message).await {
-            debug!("消息被过滤: {}", message.id);
+            info!("⚠️  消息被过滤（不包含关键词）: {}", message.id);
             return Ok(());
         }
 
+        info!("✅ 消息通过关键词过滤");
+
         // 将消息加入队列
+        info!("📥 将消息加入处理队列...");
         self.message_queue.lock().await.push_back(message);
+        info!("✓ 消息已加入处理队列");
 
         // 如果队列达到批量大
         let queue_size = self.message_queue.lock().await.len();
+        info!("📊 当前队列大小: {}", queue_size);
         if queue_size >= self.config.processing.batch_size {
-            debug!("队列达到批量大小 ({}), 触发处理", queue_size);
+            info!("🚀 队列达到批量大小 ({}), 触发处理", queue_size);
             self.process_queue().await?;
+        } else {
+            info!("⏳ 队列未达到批量大小，等待更多消息");
         }
 
         Ok(())
@@ -168,7 +183,9 @@ impl MessageProcessor {
                 Ok(analysis_result) => {
                     if analysis_result.is_relevant {
                         info!("发现相关消息:");
-                        info!("{}", analysis_result.format_summary());
+                        // 使用Unicode安全的日志记录，避免tracing内部UTF-8问题
+                        let safe_summary = crate::unicode_safe::safe_log_message(&analysis_result.format_summary(), "analysis_summary");
+                        info!("{}", safe_summary);
                         results.push(analysis_result);
                     } else {
                         debug!("消息不是相关内容");
@@ -255,16 +272,49 @@ impl MessageProcessor {
         Ok(())
     }
 
-    /// 发送报告（TODO: 实际发送到 Telegram）
+    /// 发送报告（输出详细日志并转发到Telegram）
     async fn send_report(&self, report: &SummaryReport) -> Result<()> {
-        info!("========== 汇总报告 ==========");
-        info!("\n{}", report.format_full_report());
-        info!("==============================");
+        info!("========== AI 评估报告 ==========");
 
-        // TODO: 实际实现：
-        // 1. 使用 Telegram Bot API 或客户端发送报告
-        // 2. 发送到 config.telegram.target_user
-        // 3. 如果消息太长，需要分段发送
+        // 获取详细报告内容
+        let report_content = report.format_full_report();
+
+        // 按行输出，确保日志中能完整显示
+        for line in report_content.lines() {
+            if !line.trim().is_empty() {
+                info!("{}", line);
+            }
+        }
+
+        info!("===============================");
+        info!("✓ AI 评估报告已生成，共包含 {} 个 token 分析", report.tokens.len());
+
+        // 如果有具体的 token 分析，额外输出详细信息
+        if !report.tokens.is_empty() {
+            info!("📊 详细分析:");
+            for (i, token) in report.tokens.iter().enumerate() {
+                info!("  {}. Token: {} | 提及次数: {} | 推荐: {}",
+                    i + 1,
+                    token.name,
+                    token.mentions,
+                    token.recommendation
+                );
+                if let Some(contract) = &token.contract_address {
+                    info!("     合约地址: {}", contract);
+                }
+                info!("     平均置信度: {:.1}%", token.avg_confidence * 100.0);
+                info!("     来源频道: {}", token.sources.join(", "));
+            }
+        }
+
+        // 转发报告到 Telegram 目标用户
+        if !report_content.is_empty() {
+            info!("正在转发报告到 Telegram 用户 {}...", self.config.telegram.target_user);
+            match self.telegram_bot.send_message(&report_content).await {
+                Ok(_) => info!("✓ 报告已成功转发到 Telegram 用户 {}", self.config.telegram.target_user),
+                Err(e) => error!("✗ 转发报告到 Telegram 失败: {}", e),
+            }
+        }
 
         Ok(())
     }
@@ -276,17 +326,20 @@ impl MessageProcessor {
             return false;
         }
 
-        // 检查消息是否包含关键词
+        // 检查消息是否包含关键词 - 如果包含关键词则不过滤（返回false）
         let lower_text = message.text.to_lowercase();
-        self.config.processing.keywords.iter().any(|keyword| {
+        let has_keyword = self.config.processing.keywords.iter().any(|keyword| {
             lower_text.contains(&keyword.to_lowercase())
-        })
+        });
+
+        // 如果包含任何关键词，则不过滤（返回false）
+        // 如果不包含关键词，则过滤（返回true）
+        !has_keyword
     }
 
-    /// 检查消息是否来自监控的频道
-    pub async fn should_process_message(&self, channel_id: i64) -> bool {
-        let channels = self.monitored_channels.lock().await;
-        channels.iter().any(|c| c.channel_id == channel_id)
+    /// 检查消息是否来自监控的频道 - 现在接受所有频道
+    pub async fn should_process_message(&self, _channel_id: i64) -> bool {
+        true  // 接受所有频道的消息，不再进行验证
     }
 
     /// 获取所有监控的频道
@@ -368,6 +421,7 @@ impl Clone for MessageProcessor {
         Self {
             config: self.config.clone(),
             ai_service: Arc::clone(&self.ai_service),
+            telegram_bot: Arc::clone(&self.telegram_bot),
             message_queue: Arc::clone(&self.message_queue),
             analysis_results: Arc::clone(&self.analysis_results),
             is_running: Arc::clone(&self.is_running),

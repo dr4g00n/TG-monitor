@@ -21,14 +21,33 @@ from src.telegram_client import TelegramMonitor
 from src.http_sender import HttpSender
 from src.config_loader import load_config
 
-# 配置日志
+# 配置日志 - 优化显示，隐藏Pyrogram网络调试，显示应用层重要信息
 logger.remove()
 logger.add(
     sys.stderr,
     format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{message}</cyan>",
-    level="INFO"
+    level="INFO"  # 改为INFO级别，减少调试信息
 )
 logger.add("monitor.log", rotation="500 MB", retention="10 days", level="DEBUG")
+
+# ✅ 配置Pyrogram日志 - 平衡信息显示：显示消息相关调试，隐藏心跳包
+import logging
+# 设置Pyrogram为INFO级别，显示消息相关日志但隐藏大部分网络调试
+pyrogram_logger = logging.getLogger("pyrogram")
+pyrogram_logger.setLevel(logging.INFO)
+
+# 创建控制台处理器，显示重要Pyrogram信息
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s | PYROGRAM | %(levelname)s | %(message)s')
+console_handler.setFormatter(formatter)
+pyrogram_logger.addHandler(console_handler)
+
+# ✅ 配置HTTP日志 - 显示发送相关日志
+http_logger = logging.getLogger("urllib3")
+http_logger.setLevel(logging.INFO)  # 显示HTTP发送相关信息
+
+logger.info("✅ 日志配置完成 - 显示消息捕获和HTTP发送，隐藏网络心跳包")
 
 
 def main():

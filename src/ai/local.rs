@@ -47,8 +47,9 @@ impl OllamaService {
 #[async_trait]
 impl AIService for OllamaService {
     async fn analyze(&self, message: &str) -> Result<AnalysisResult, AIError> {
-        debug!("使用 Ollama 本地模型分析消息: {}",
-            message[..message.len().min(50)].to_string());
+        // UTF-8安全的字符截断
+        let preview: String = message.chars().take(50).collect();
+        debug!("使用 Ollama 本地模型分析消息: {}", preview);
 
         // 构建请求体
         let request_body = serde_json::json!({

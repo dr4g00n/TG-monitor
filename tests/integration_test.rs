@@ -196,10 +196,14 @@ mod integration_tests {
         let ai_service = AIServiceFactory::create(&config.ai).unwrap();
 
         // 创建 Telegram Bot
-        let _bot = TelegramBot::new(config.telegram.clone());
+        let telegram_bot = Arc::new(TelegramBot::new(config.telegram.clone()));
 
         // 创建消息处理器
-        let processor = Arc::new(MessageProcessor::new(config.clone(), ai_service.into()));
+        let processor = Arc::new(MessageProcessor::new(
+            config.clone(),
+            ai_service.into(),
+            telegram_bot,
+        ));
         processor.start().await.expect("Failed to start processor");
 
         // 创建测试消息
@@ -264,10 +268,14 @@ mod integration_tests {
         // 创建 AI 服务
         let ai_service = AIServiceFactory::create(&config.ai).expect("Should create AI service");
 
+        // 创建 Telegram Bot（使用测试配置）
+        let telegram_bot = Arc::new(TelegramBot::new(config.telegram.clone()));
+
         // 创建消息处理器
         let message_processor = Arc::new(MessageProcessor::new(
             config,
             ai_service.into(),
+            telegram_bot,
         ));
 
         // 添加测试频道到监控列表
