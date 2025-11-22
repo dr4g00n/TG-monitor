@@ -30,11 +30,11 @@ logger.add(
 )
 logger.add("monitor.log", rotation="500 MB", retention="10 days", level="DEBUG")
 
-# ✅ 配置Pyrogram日志 - 平衡信息显示：显示消息相关调试，隐藏心跳包
+# ✅ 配置Pyrogram日志 - 详细调试模式，捕获所有消息事件
 import logging
-# 设置Pyrogram为INFO级别，显示消息相关日志但隐藏大部分网络调试
+# 设置Pyrogram为DEBUG级别，捕获所有消息和事件
 pyrogram_logger = logging.getLogger("pyrogram")
-pyrogram_logger.setLevel(logging.INFO)
+pyrogram_logger.setLevel(logging.DEBUG)
 
 # 创建控制台处理器，显示重要Pyrogram信息
 console_handler = logging.StreamHandler()

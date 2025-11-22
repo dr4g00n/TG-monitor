@@ -94,33 +94,191 @@ class TelegramMonitor:
             # 同时保存到实例属性
             self.client = _global_pyrogram_client
 
-            # 步骤 2: 注册消息处理器
+            # 步骤 2: 注册消息处理器（将在客户端启动后验证频道）
             logger.info("步骤 2/3: 注册消息处理器...")
 
             @self.client.on_message()
             async def message_handler(client, message):
-                """处理所有收到的消息 - 使用 debug_monitor.py 的成功模式"""
-                logger.info("🎯 Handler触发 - 收到消息事件！")
-                logger.info(f"  聊天ID: {message.chat.id}")
-                logger.info(f"  消息ID: {message.id}")
-                logger.info(f"  聊天类型: {message.chat.type}")
-                logger.info(f"  聊天标题: {getattr(message.chat, 'title', 'N/A')}")
+                """
+                全局消息捕获和分析处理器
+                - 捕获所有消息
+                - 分析消息类型和来源
+                - 只处理我们关心的消息（频道和 Bot）
+                """
+                # ==================== 全局消息捕获 ====================
+                logger.info("🎯【全局捕获】收到新消息！")
+                logger.info(f"  📍 聊天ID: {message.chat.id}")
+                logger.info(f"  📍 消息ID: {message.id}")
+                logger.info(f"  📍 聊天类型: {message.chat.type}")
+                logger.info(f"  📍 聊天标题: {getattr(message.chat, 'title', 'N/A')}")
 
-                # 检查频道是否在监控列表中
-                if message.chat.id not in self.channel_ids:
-                    logger.debug(f"跳过未监控的频道: {message.chat.id}")
-                    return
+                # 显示发送者信息
+                if message.from_user:
+                    sender = message.from_user
+                    sender_name = sender.username or sender.first_name or 'Unknown'
+                    logger.info(f"  👤 发送者用户: {sender_name} ({sender.id})")
+                elif message.sender_chat:
+                    sender = message.sender_chat
+                    sender_name = getattr(sender, 'title', 'Unknown')
+                    logger.info(f"  📢 发送者频道: {sender_name} ({sender.id})")
 
-                # ✅ 更新统计
-                self.stats['messages_received'] += 1
-                self.stats['last_message_time'] = message.date
-                self.stats['channels_active'].add(message.chat.id)
+                # 显示消息内容预览
+                if message.text:
+                    preview = message.text[:200].replace('\n', '\\n')
+                    logger.info(f"  📝 内容预览: {preview}{'...' if len(message.text) > 200 else ''}")
+                elif message.caption:
+                    preview = message.caption[:200].replace('\n', '\\n')
+                    logger.info(f"  🖼️  媒体描述: {preview}{'...' if len(message.caption) > 200 else ''}")
 
+                # ==================== 消息类型分析 ====================
+                logger.info("🔬【消息分析】开始分析消息类型...")
+
+                # 分析1: 是否在监控的频道列表中
+                if message.chat.id in self.channel_ids:
+                    logger.info(f"  ✅【频道消息】这是监控的频道消息！")
+                    message_type = "channel"
+                # 分析2: 是否为 Bot 消息
+                elif message.chat.type == "bot":
+                    logger.info(f"  🤖【Bot消息】这是 Bot 消息，检查是否包含 Pump Alert...")
+                    message_type = "bot"
+                # 分析3: 是否为私聊
+                elif message.chat.type == "private":
+                    logger.info(f"  💬【私聊消息】这是私人聊天消息")
+                    message_type = "private"
+                # 分析4: 是否为群组/超级群组
+                elif message.chat.type in ["group", "supergroup"]:
+                    logger.info(f"  👥【群组消息】这是群组消息")
+                    message_type = "group"
+                else:
+                    logger.info(f"  ❓【未知类型】未识别的聊天类型: {message.chat.type}")
+                    message_type = "unknown"
+
+                # ==================== 智能过滤和处理 ====================
+                logger.info("🤖【智能处理】根据消息类型决定是否处理...")
+
+                # 处理我们关心的消息类型：频道消息、Bot 消息、群组消息和私聊消息
+                if message_type in ["channel", "bot", "group", "private"]:
+                    logger.info(f"  ✅【处理决定】处理此消息 (类型: {message_type})")
+
+                    # 特殊处理：群组和私聊消息，检查是否包含 Pump Alert 信息
+                    if message_type in ["group", "private"] and message.text:
+                        logger.info("🔍【非频道消息检查】检查是否包含 Pump/Alert 关键词...")
+                        if "PUMP" in message.text.upper() or "ALERT" in message.text.upper():
+                            logger.info("🎯【特殊消息】群组/私聊消息包含 Pump/Alert 关键词！")
+                            # 继续处理，可能包含重要信息
+
+                    # 特殊调试：针对 Pump Alert 频道和 Bot 消息的详细日志
+                    if message.chat.id == -1002115686230:
+                        logger.info("🚨【特殊频道】收到 PUMP ALERT 频道消息！")
+
+                    # Bot 消息特殊处理：检查是否包含 Pump Alert 信息
+                    if message_type == "bot" and message.text and "PUMP" in message.text.upper():
+                        logger.info("🎯【Bot关键词】Bot消息包含 PUMP 关键词！")
+
+                        # 检查是否包含 Pump Alert 频道信息
+                        if "-1002115686230" in message.text or "Pump Alert" in message.text:
+                            logger.info("🎯【确认PumpAlert】这是 Pump Alert 的 Bot 转发消息！")
+                            # 将 Bot 消息视为 Pump Alert 频道消息进行处理
+                            pump_alert_data = {
+                                'channel_id': -1002115686230,
+                                'channel_name': 'Pump Alert - GMGN',
+                                'message_id': message.id,
+                                'text': message.text,
+                                'timestamp': int(message.date.timestamp()),
+                                'sender': f"Bot_{message.chat.id}",
+                                'is_bot_forward': True
+                            }
+                            # 使用 Pump Alert 频道ID进行后续处理
+                            effective_channel_id = -1002115686230
+                        else:
+                            # 其他 Bot 消息，使用 Bot ID
+                            effective_channel_id = message.chat.id
+                    else:
+                        # 正常频道消息
+                        effective_channel_id = message.chat.id
+
+                    # ✅ 更新统计
+                    self.stats['messages_received'] += 1
+                    self.stats['last_message_time'] = message.date
+                    self.stats['channels_active'].add(effective_channel_id)
+
+                    try:
+                        # 提取消息信息
+                        channel_name = getattr(message.chat, 'title', 'Unknown')
+                        logger.info(f"📨【消息详情】正在处理:")
+                        logger.info(f"  📍 频道: {channel_name} ({effective_channel_id})")
+                        logger.info(f"  📝 消息ID: {message.id}")
+                        logger.info(f"  ⏰ 时间: {message.date.strftime('%Y-%m-%d %H:%M:%S')}")
+
+                        # 提取并发送消息数据
+                        if message_type == "bot" and "-1002115686230" in message.text:
+                            # 使用 Pump Alert 数据
+                            message_data = pump_alert_data
+                        else:
+                            # 正常提取消息数据
+                            message_data = self.extract_message_data(message)
+
+                        # 发送到 Rust 服务
+                        logger.info(f"⬆️【转发到Rust】发送到处理服务...")
+                        success = await asyncio.to_thread(self.http_sender.send_message, message_data)
+
+                        # 更新统计
+                        if success:
+                            self.stats['messages_sent'] += 1
+                            logger.info(f"✓ 消息处理完成: {message_data['message_id']}")
+                        else:
+                            self.stats['messages_failed'] += 1
+                            logger.warning(f"⚠️  消息发送失败: {message_data['message_id']}")
+
+                        # 显示统计
+                        logger.info(f"📊 实时统计:")
+                        logger.info(f"  累计接收: {self.stats['messages_received']}")
+                        logger.info(f"  成功发送: {self.stats['messages_sent']}")
+                        logger.info(f"  发送失败: {self.stats['messages_failed']}")
+                        logger.info(f"  活跃频道: {len(self.stats['channels_active'])}")
+
+                    except Exception as e:
+                        self.stats['messages_failed'] += 1
+                        logger.error(f"处理消息时出错: {e}")
+                        logger.exception(e)
+
+                else:
+                    logger.info(f"  ⏭️【跳过处理】不处理此消息 (类型: {message_type})")
+                    # 只记录接收统计，不处理消息
+                    self.stats['messages_received'] += 1
+                    self.stats['last_message_time'] = message.date
+                    self.stats['channels_active'].add(message.chat.id)
+                    return  # 直接返回，不继续处理
+
+                # ==================== 消息处理 ====================
+
+                # 只有在处理的消息才执行这部分
                 try:
+                    # 确定有效频道/聊天ID和名称
+                    if message_type == "bot" and message.text and ("-1002115686230" in message.text or "Pump Alert" in message.text):
+                        # Bot转发的Pump Alert消息映射到实际频道
+                        effective_channel_id = -1002115686230
+                        effective_channel_name = "Pump Alert - GMGN"
+                    elif message_type == "group":
+                        # 群组消息
+                        effective_channel_id = message.chat.id
+                        effective_channel_name = getattr(message.chat, 'title', f'Group_{message.chat.id}')
+                    elif message_type == "private":
+                        # 私聊消息
+                        effective_channel_id = message.chat.id
+                        sender_name = getattr(message.from_user, 'username', 'Unknown') if message.from_user else 'Unknown'
+                        effective_channel_name = f"Private_{sender_name}"
+                    else:
+                        # 正常频道消息
+                        effective_channel_id = message.chat.id
+                        effective_channel_name = getattr(message.chat, 'title', 'Unknown')
+
+                    # 记录活跃频道/聊天
+                    self.stats['channels_active'].add(effective_channel_id)
+
                     # 提取消息信息
-                    channel_name = getattr(message.chat, 'title', 'Unknown')
                     logger.info(f"📨 收到新消息:")
-                    logger.info(f"  频道: {channel_name} ({message.chat.id})")
+                    logger.info(f"  来源: {effective_channel_name} ({effective_channel_id})")
                     logger.info(f"  消息ID: {message.id}")
                     logger.info(f"  时间: {message.date.strftime('%Y-%m-%d %H:%M:%S')}")
 
@@ -145,8 +303,21 @@ class TelegramMonitor:
                         media_type = self.get_media_type(message)
                         logger.info(f"  媒体类型: {media_type}")
 
-                    # 提取消息数据
-                    message_data = self.extract_message_data(message)
+                    # 提取消息数据（特殊处理 Bot 消息）
+                    if message_type == "bot" and message.text and ("-1002115686230" in message.text or "Pump Alert" in message.text):
+                        # 使用 Pump Alert 数据
+                        message_data = {
+                            'channel_id': -1002115686230,
+                            'channel_name': 'Pump Alert - GMGN',
+                            'message_id': message.id,
+                            'text': message.text,
+                            'timestamp': int(message.date.timestamp()),
+                            'sender': f"Bot_{message.chat.id}",
+                            'is_bot_forward': True
+                        }
+                    else:
+                        # 正常提取消息数据
+                        message_data = self.extract_message_data(message)
 
                     # 发送到 Rust 服务
                     logger.info(f"⬆️  转发到 Rust 服务...")
@@ -174,12 +345,22 @@ class TelegramMonitor:
 
             logger.info("✓ 消息处理器注册成功")
 
-            # 步骤 3: 启动客户端并监听
-            logger.info("步骤 3/3: 启动客户端并监听消息...")
+            # 步骤 3: 启动客户端、验证频道并开始监听
+            logger.info("步骤 3/3: 启动客户端、验证频道并开始监听...")
             logger.info("========================================")
 
             await self.client.start()
             logger.info("✓ Telegram 监控器启动成功！")
+
+            # 验证频道访问权限（需要在客户端启动后进行）
+            logger.info("验证频道访问权限...")
+            verified_channels, failed_channels = await self.verify_channels()
+
+            # 如果所有频道都验证失败，给出警告但继续运行
+            if not verified_channels:
+                logger.warning("⚠️  所有频道验证失败！将继续运行但无法监控任何频道。")
+                logger.warning("请检查：1) 频道ID是否正确 2) 是否已加入这些频道 3) 账号权限")
+
             logger.info("等待新消息... 按 Ctrl+C 停止")
             logger.info("========================================")
 
@@ -245,6 +426,29 @@ class TelegramMonitor:
     def is_channel_monitored(self, channel_id):
         """检查频道是否在监控列表中"""
         return channel_id in self.channel_ids
+
+    async def verify_channels(self):
+        """验证所有频道的访问权限"""
+        logger.info("验证频道访问权限...")
+        verified_channels = []
+        failed_channels = []
+
+        for i, channel_id in enumerate(self.channel_ids, 1):
+            try:
+                chat = await self.client.get_chat(channel_id)
+                logger.info(f"  ✓ [{i}] 频道可访问: {chat.title} ({channel_id})")
+                verified_channels.append(channel_id)
+            except Exception as e:
+                logger.error(f"  ✗ [{i}] 无法访问频道 {channel_id}: {e}")
+                failed_channels.append(channel_id)
+
+        # 更新监控列表为仅包含验证通过的频道
+        logger.info(f"✓ 频道验证完成: {len(verified_channels)} 个可用, {len(failed_channels)} 个失败")
+
+        if failed_channels:
+            logger.warning(f"以下频道验证失败，将被跳过: {failed_channels}")
+
+        return verified_channels, failed_channels
 
     def extract_message_data(self, message: Message) -> Dict:
         """提取消息数据 - 保持原有功能"""
