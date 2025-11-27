@@ -372,7 +372,7 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 ## 联系方式
 
 - 提交 Issue: [GitHub Issues](https://github.com/yourusername/tg-meme-token-monitor/issues)
-- 邮箱: your.email@example.com
+- 邮箱: balabala@nonono.com
 
 ---
 

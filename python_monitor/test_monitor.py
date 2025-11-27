@@ -6,6 +6,7 @@
 """
 
 import asyncio
+import sys
 from pyrogram import Client, filters
 from loguru import logger
 from pathlib import Path
@@ -185,4 +186,8 @@ if __name__ == "__main__":
     print("=" * 60)
     print()
 
-    asyncio.run(test_monitor())
+    try:
+        asyncio.run(test_monitor())
+    except KeyboardInterrupt:
+        print("\n✅ 测试已正常停止")
+        sys.exit(0)

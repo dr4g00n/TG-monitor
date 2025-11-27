@@ -138,15 +138,15 @@ class TelegramMonitor:
                     logger.info(f"  ✅【频道消息】这是监控的频道消息！")
                     message_type = "channel"
                 # 分析2: 是否为 Bot 消息
-                elif message.chat.type == "bot":
+                elif str(message.chat.type) == "ChatType.BOT":
                     logger.info(f"  🤖【Bot消息】这是 Bot 消息，检查是否包含 Pump Alert...")
                     message_type = "bot"
                 # 分析3: 是否为私聊
-                elif message.chat.type == "private":
+                elif str(message.chat.type) == "ChatType.PRIVATE":
                     logger.info(f"  💬【私聊消息】这是私人聊天消息")
                     message_type = "private"
                 # 分析4: 是否为群组/超级群组
-                elif message.chat.type in ["group", "supergroup"]:
+                elif str(message.chat.type) in ["ChatType.GROUP", "ChatType.SUPERGROUP"]:
                     logger.info(f"  👥【群组消息】这是群组消息")
                     message_type = "group"
                 else:
@@ -260,9 +260,11 @@ class TelegramMonitor:
                         effective_channel_id = -1002115686230
                         effective_channel_name = "Pump Alert - GMGN"
                     elif message_type == "group":
-                        # 群组消息
+                        # 群组消息 - 接受权限限制，专注于内容分析
                         effective_channel_id = message.chat.id
                         effective_channel_name = getattr(message.chat, 'title', f'Group_{message.chat.id}')
+                        # 注意：作为普通成员，无法获取其他成员的详细信息，这是Telegram的安全限制
+                        logger.info("  📌【权限说明】作为普通成员，无法获取其他成员的详细信息，专注于消息内容分析")
                     elif message_type == "private":
                         # 私聊消息
                         effective_channel_id = message.chat.id
@@ -282,11 +284,15 @@ class TelegramMonitor:
                     logger.info(f"  消息ID: {message.id}")
                     logger.info(f"  时间: {message.date.strftime('%Y-%m-%d %H:%M:%S')}")
 
-                    # 显示发送者信息
+                    # 显示发送者信息（根据聊天类型调整显示级别）
                     if message.from_user:
                         sender = message.from_user
                         sender_name = sender.username or sender.first_name or 'Unknown'
-                        logger.info(f"  发送者: {sender_name} ({sender.id})")
+                        # 群组消息：简化发送者信息，专注于内容
+                        if message_type == "group":
+                            logger.info(f"  发送者: Group_Member")
+                        else:
+                            logger.info(f"  发送者: {sender_name} ({sender.id})")
                     elif message.sender_chat:
                         sender_chat = message.sender_chat
                         sender_name = getattr(sender_chat, 'title', 'Unknown')
@@ -303,7 +309,7 @@ class TelegramMonitor:
                         media_type = self.get_media_type(message)
                         logger.info(f"  媒体类型: {media_type}")
 
-                    # 提取消息数据（特殊处理 Bot 消息）
+                    # 提取消息数据（根据聊天类型特殊处理）
                     if message_type == "bot" and message.text and ("-1002115686230" in message.text or "Pump Alert" in message.text):
                         # 使用 Pump Alert 数据
                         message_data = {
@@ -314,6 +320,18 @@ class TelegramMonitor:
                             'timestamp': int(message.date.timestamp()),
                             'sender': f"Bot_{message.chat.id}",
                             'is_bot_forward': True
+                        }
+                    elif message_type == "group":
+                        # 群组消息 - 专注于内容分析，简化发送者信息
+                        message_data = {
+                            'channel_id': message.chat.id,
+                            'channel_name': getattr(message.chat, 'title', f'Group_{message.chat.id}'),
+                            'message_id': message.id,
+                            'text': message.text or '',
+                            'timestamp': int(message.date.timestamp()),
+                            'sender': 'Group_Member',  # 简化发送者信息，专注于内容
+                            'is_group': True,
+                            'content_analysis': self.analyze_message_content(message)
                         }
                     else:
                         # 正常提取消息数据
@@ -484,6 +502,70 @@ class TelegramMonitor:
 
         logger.debug(f"消息数据提取完成: {data['channel_name']} - {data['message_id']}")
         return data
+
+    def analyze_message_content(self, message: Message) -> dict:
+        """
+        分析消息内容，提供智能内容分析
+        专注于消息内容而非发送者身份
+        """
+        analysis = {
+            'message_length': 0,
+            'has_links': False,
+            'has_mentions': False,
+            'has_hashtags': False,
+            'has_emojis': False,
+            'keyword_matches': [],
+            'sentiment': 'neutral',
+            'language': 'unknown'
+        }
+
+        if not message.text:
+            return analysis
+
+        text = message.text
+
+        # 基础统计
+        analysis['message_length'] = len(text)
+
+        # 内容特征检测
+        analysis['has_links'] = 'http' in text.lower() or 'www.' in text.lower()
+        analysis['has_mentions'] = '@' in text
+        analysis['has_hashtags'] = '#' in text
+        analysis['has_emojis'] = any(ord(char) > 127 for char in text)
+
+        # 关键词匹配（专注于加密货币相关词汇）
+        crypto_keywords = [
+            'pump', 'dump', 'moon', 'diamond', 'hands', 'hodl',
+            'buy', 'sell', 'hold', 'trade', 'swap', 'liquidity',
+            'contract', 'address', 'ca', 'token', 'coin'
+        ]
+
+        text_lower = text.lower()
+        analysis['keyword_matches'] = [keyword for keyword in crypto_keywords if keyword in text_lower]
+
+        # 简单的情感分析
+        positive_words = ['moon', 'pump', 'buy', 'bull', 'up', 'gain', 'profit']
+        negative_words = ['dump', 'sell', 'bear', 'down', 'loss', 'rug']
+
+        positive_count = sum(1 for word in positive_words if word in text_lower)
+        negative_count = sum(1 for word in negative_words if word in text_lower)
+
+        if positive_count > negative_count:
+            analysis['sentiment'] = 'positive'
+        elif negative_count > positive_count:
+            analysis['sentiment'] = 'negative'
+        else:
+            analysis['sentiment'] = 'neutral'
+
+        # 语言检测（简单实现）
+        if any('\u4e00' <= char <= '\u9fff' for char in text):
+            analysis['language'] = 'chinese'
+        elif any('a' <= char <= 'z' for char in text.lower()):
+            analysis['language'] = 'english'
+        else:
+            analysis['language'] = 'mixed'
+
+        return analysis
 
     def get_media_type(self, message: Message) -> str:
         """获取媒体类型 - 保持原有功能"""
