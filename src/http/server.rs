@@ -2,11 +2,12 @@ use crate::http::{handler, channel_handler};
 use crate::processor::MessageProcessor;
 use axum::{
     routing::{get, post, put, delete},
-    Router,
+    Router, extract::DefaultBodyLimit,
 };
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::trace::TraceLayer;
 use tracing::info;
 
 /// HTTP 服务器
@@ -33,8 +34,9 @@ impl HttpServer {
         let app = Router::new()
             // 健康检查
             .route("/health", get(handler::health_check))
-            // 消息接收
+            // 消息接收 - 增加请求体大小限制到 10MB
             .route("/api/v1/message", post(handler::receive_message))
+            .layer(DefaultBodyLimit::max(10 * 1024 * 1024)) // 10MB limit
             // 频道管理
             .route("/api/v1/channels", get(channel_handler::get_channels))
             .route("/api/v1/channels", post(channel_handler::add_channel))
@@ -42,6 +44,7 @@ impl HttpServer {
             .route("/api/v1/channels/:channel_id", delete(channel_handler::remove_channel))
             .route("/api/v1/channels/:channel_id/check", get(channel_handler::check_channel))
             .layer(cors)
+            .layer(TraceLayer::new_for_http())  // 添加请求日志追踪
             .with_state(self.processor.clone());
 
         let addr = SocketAddr::from(([0, 0, 0, 0], self.port));

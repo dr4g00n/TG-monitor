@@ -100,7 +100,7 @@ fn init_logging() {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,tg_meme_token_monitor=debug".into()),
+                .unwrap_or_else(|_| "info,tower_http=debug,tg_meme_token_monitor=debug".into()),
         )
         .with(
             tracing_subscriber::fmt::layer()

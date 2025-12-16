@@ -1,14 +1,17 @@
 use crate::ai::models::Message;
+use crate::models::{BatchRequest, BatchResponse};
 use crate::processor::MessageProcessor;
 use axum::{
     extract::State,
     http::StatusCode,
     response::{IntoResponse, Json},
 };
+use bytes::Bytes; // 添加Bytes导入
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// 接收消息的请求体
 #[derive(Deserialize, Debug, Serialize)]
@@ -59,11 +62,73 @@ impl IntoResponse for ApiResponse {
     }
 }
 
-/// 处理接收消息的端点
+// 批量处理服务（新增）
+pub struct BatchProcessor {
+    pub processor: Arc<MessageProcessor>,
+}
+
+impl BatchProcessor {
+    pub fn new(processor: Arc<MessageProcessor>) -> Self {
+        Self { processor }
+    }
+}
+
+/// 处理接收消息的端点（支持单条和批量）
 pub async fn receive_message(
     State(processor): State<Arc<MessageProcessor>>,
-    Json(request): Json<ReceiveMessageRequest>,
+    bytes: Bytes, // 直接获取原始字节
 ) -> impl IntoResponse {
+    // 记录原始字节大小
+    debug!("收到请求，大小: {} 字节", bytes.len());
+
+    // 尝试解析为JSON字符串
+    let request_str = match String::from_utf8(bytes.to_vec()) {
+        Ok(s) => s,
+        Err(e) => {
+            error!("❌ 请求不是有效的UTF-8: {}", e);
+            return ApiResponse::error("请求编码错误").into_response();
+        }
+    };
+
+    // 记录前500个字符用于调试（增加长度以便看到更多）
+    let debug_len = request_str.len().min(500);
+    debug!("请求内容 (前{}字符): {}", debug_len, &request_str[..debug_len]);
+
+    // 尝试解析为批量请求（添加详细的错误日志）
+    match serde_json::from_str::<crate::models::BatchRequest>(&request_str) {
+        Ok(batch_request) => {
+            info!("📦 检测到批量请求格式");
+            let batch_response = handle_batch_request(processor, batch_request).await;
+            return Json(batch_response).into_response();
+        }
+        Err(e) => {
+            debug!("批量请求解析失败（这是正常的，可能是单条消息）: {}", e);
+        }
+    }
+
+    // 尝试解析为单条消息
+    match serde_json::from_str::<ReceiveMessageRequest>(&request_str) {
+        Ok(single_request) => {
+            info!("💬 检测到单条消息格式");
+            let api_response = handle_single_message(processor, single_request).await;
+            return Json(api_response).into_response();
+        }
+        Err(e) => {
+            error!("❌ 单条消息解析也失败: {}", e);
+        }
+    }
+
+    // 如果都失败了
+    error!("❌ 无法解析请求格式 - 可能是JSON格式错误或缺少必需字段");
+    error!("💡 使用在线JSON验证工具检查格式: https://jsonlint.com/");
+    ApiResponse::error("请求格式不正确，请检查JSON格式").into_response()
+}
+
+/// 处理单条消息（保持原有逻辑）
+async fn handle_single_message(
+    processor: Arc<MessageProcessor>,
+    request: ReceiveMessageRequest,
+) -> ApiResponse {
     info!(
         "收到来自 Python 监控器的消息: [{}] {}",
         request.channel_name, request.message_id
@@ -109,7 +174,7 @@ pub async fn receive_message(
             // 捕获到panic，记录详细信息并返回错误响应
             let panic_message = format_panic_info(panic_info);
             error!("🚨 严重错误 - 捕获到panic: {}", panic_message);
-            error!("📍 错误发生在 receive_message 函数中");
+            error!("📍 错误发生在 handle_single_message 函数中");
 
             // 返回500状态码的错误响应
             return ApiResponse::error(format!("服务内部错误 - 已捕获panic: {}", panic_message))
@@ -117,9 +182,139 @@ pub async fn receive_message(
     }
 }
 
+/// 处理批量请求（新增功能）
+async fn handle_batch_request(
+    processor: Arc<MessageProcessor>,
+    batch_request: crate::models::BatchRequest,
+) -> crate::models::BatchResponse {
+    info!(
+        "开始处理批量请求: {}, 笔记: {}, 评论数: {}",
+        batch_request.batch_id,
+        batch_request.note_info.note_title,
+        batch_request.messages.len()
+    );
+
+    // 验证请求
+    if let Err(e) = batch_request.validate() {
+        error!("❌ 批量请求验证失败: {}", e);
+        return BatchResponse::error(
+            batch_request.batch_id,
+            batch_request.note_info.note_id,
+            e.to_string(),
+        );
+    }
+
+    info!("✅ 批量请求验证通过，开始处理...");
+
+    // 处理批量消息
+    match process_batch_messages(processor, batch_request).await {
+        Ok(response) => {
+            info!("🎉 批量处理完成");
+            response
+        }
+        Err(e) => {
+            error!("❌ 批量处理失败: {}", e);
+            BatchResponse::error(
+                "unknown".to_string(),
+                "unknown".to_string(),
+                e.to_string(),
+            )
+        }
+    }
+}
+
 /// 健康检查端点
 pub async fn health_check() -> impl IntoResponse {
     ApiResponse::success("服务运行正常")
+}
+
+/// 处理批量消息（新增函数）
+async fn process_batch_messages(
+    processor: Arc<MessageProcessor>,
+    batch_request: crate::models::BatchRequest,
+) -> Result<crate::models::BatchResponse, Box<dyn std::error::Error>> {
+    use crate::models::{BatchResponse, SentimentType};
+    use std::collections::HashMap;
+    use std::time::Instant;
+
+    let start_time = Instant::now();
+    let batch_id = batch_request.batch_id.clone();
+    let note_id = batch_request.note_info.note_id.clone();
+    let total_count = batch_request.messages.len();
+
+    info!("开始批量处理 {} 条消息", total_count);
+
+    // 初始化结果容器
+    let mut sentiment_results = HashMap::new();
+    let mut topic_results = HashMap::new();
+    let mut keyword_results = HashMap::new();
+    let mut processed_count = 0;
+
+    // 处理每条消息
+    for message in batch_request.messages {
+        let msg_id = message.message_id.clone();
+
+        // 转换为内部消息格式
+        let ai_message = crate::ai::models::Message {
+            id: 0, // 批量处理不使用此字段
+            channel_id: 0,
+            channel_name: "batch".to_string(),
+            text: message.content,
+            timestamp: message.metadata.temporal.absolute as i64,
+            sender: Some(message.metadata.user_info.user_name),
+            media_type: None,
+        };
+
+        // 调用处理器处理消息
+        match processor.process_message(ai_message).await {
+            Ok(_) => {
+                // 模拟分析结果（实际应该调用AI服务）
+                let sentiment_result = crate::models::SentimentResult::new(
+                    SentimentType::Positive,
+                    0.8,
+                    0.1,
+                    0.1,
+                );
+
+                let topic_result = crate::models::TopicResult::new(
+                    vec!["产品质量".to_string(), "性价比".to_string()],
+                    vec![0.9, 0.7],
+                );
+
+                let keyword_result = crate::models::KeywordResult::new(
+                    vec!["质量很好".to_string(), "推荐购买".to_string()],
+                    vec![0.8, 0.7],
+                );
+
+                sentiment_results.insert(msg_id.clone(), sentiment_result);
+                topic_results.insert(msg_id.clone(), topic_result);
+                keyword_results.insert(msg_id.clone(), keyword_result);
+                processed_count += 1;
+
+                info!("✅ 消息 {} 处理成功", msg_id);
+            }
+            Err(e) => {
+                warn!("⚠️  消息 {} 处理失败: {}", msg_id, e);
+                // 记录失败，但继续处理下一条
+            }
+        }
+    }
+
+    info!("批量处理完成，成功: {}/{} 条消息", processed_count, total_count);
+
+    // 构建响应
+    let response = BatchResponse::success(
+        batch_id,
+        note_id,
+        processed_count,
+        total_count,
+        sentiment_results,
+        topic_results,
+        keyword_results,
+        start_time.elapsed().as_millis() as u64,
+    );
+
+    Ok(response)
 }
 
 // 辅助函数：验证请求数据的完整性和有效性

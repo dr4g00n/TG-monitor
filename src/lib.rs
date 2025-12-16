@@ -10,6 +10,9 @@ pub mod telegram;
 // Unicode安全工具
 pub mod unicode_safe;
 
+// 数据模型
+pub mod models;
+
 // Re-export commonly used types for convenience
 pub use ai::{AIService, AIServiceFactory};
 pub use config::Config;
